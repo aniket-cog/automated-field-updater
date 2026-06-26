@@ -17,7 +17,7 @@ class ExcelUpdater:
         if isinstance(file_bytes, memoryview):
             file_bytes = file_bytes.tobytes()
         self.workbook = load_workbook(BytesIO(file_bytes))
-        self.sheet = self.workbook.active
+        self.sheet = self.workbook.worksheets[0]
 
     def update_common_fields(self, common_fields):
         for field, cell in EXCEL_COMMON_FIELDS.items():

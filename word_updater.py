@@ -1,6 +1,7 @@
 from io import BytesIO
 from copy import deepcopy
 from docx import Document
+import pandas as pd
 
 from config import (
     MAIN_TABLE_INDEX,
@@ -58,15 +59,20 @@ class WordUpdater:
             tr = table.rows[-1]._tr 
             tr.getparent().remove(tr)
 
+        def clean_val(val):
+            if pd.isna(val) or val is None:
+                return ""
+            return str(val)
+
         for _, milestone in milestone_df.iterrows():
             new_row = deepcopy(template_row)
             table._tbl.append(new_row)
             row = table.rows[-1]
-            row.cells[MILESTONE_COLUMNS["name"]].text = str(milestone["name"])
-            row.cells[MILESTONE_COLUMNS["date"]].text = str(milestone["date"])
-            row.cells[MILESTONE_COLUMNS["monthly"]].text = str(milestone["monthly"])
-            row.cells[MILESTONE_COLUMNS["quality"]].text = str(milestone["quality"])
-            row.cells[MILESTONE_COLUMNS["invoice"]].text = str(milestone["invoice"])
+            row.cells[MILESTONE_COLUMNS["name"]].text = clean_val(milestone["name"])
+            row.cells[MILESTONE_COLUMNS["date"]].text = clean_val(milestone["date"])
+            row.cells[MILESTONE_COLUMNS["monthly"]].text = clean_val(milestone["monthly"])
+            row.cells[MILESTONE_COLUMNS["quality"]].text = clean_val(milestone["quality"])
+            row.cells[MILESTONE_COLUMNS["invoice"]].text = clean_val(milestone["invoice"])
 
     def update(self, field_values, milestone_df):
         self.update_fields(field_values)

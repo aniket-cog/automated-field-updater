@@ -16,16 +16,27 @@ from config import (
 class WordReader:
 
     def __init__(self, file):
-        # Read raw bytes safely if a stream object is passed
-        file_bytes = file.read() if hasattr(file, "read") else file
-        
-        # Convert explicit memoryview blocks into traditional bytes
-        if isinstance(file_bytes, memoryview):
-            file_bytes = file_bytes.tobytes()
-            
-        # Safely wrap with BytesIO before giving it to python-docx
-        self.doc = Document(BytesIO(file_bytes))
-        self.table = self.doc.tables[MAIN_TABLE_INDEX]
+        # Accept either a bytes object or a file-like object (UploadedFile / BytesIO)
+        file_bytes = None
+        try:
+            file_bytes = file.read() if hasattr(file, "read") else file
+            if isinstance(file_bytes, memoryview):
+                file_bytes = file_bytes.tobytes()
+            # Wrap into BytesIO for python-docx
+            bio = BytesIO(file_bytes)
+            try:
+                self.doc = Document(bio)
+            except Exception as e:
+                # Give a clear message so caller can see whether it's a format/problem
+                raise ValueError(f"python-docx failed to open the file as .docx: {e}") from e
+
+            # Validate expected table exists
+            if not getattr(self.doc, "tables", None) or len(self.doc.tables) <= MAIN_TABLE_INDEX:
+                raise ValueError(f"Expected table index {MAIN_TABLE_INDEX} not found in the uploaded document. Document contains {len(self.doc.tables) if getattr(self.doc, 'tables', None) is not None else 0} tables.")
+            self.table = self.doc.tables[MAIN_TABLE_INDEX]
+        except Exception:
+            # Re-raise so calling code can display traceback
+            raise
 
     def read_fields(self):
         data = {}
@@ -43,7 +54,7 @@ class WordReader:
             values = [cell.text.strip() for cell in row.cells]
             if not any(values):
                 continue
-            
+
             milestone = {
                 "name": values[MILESTONE_COLUMNS["name"]],
                 "date": values[MILESTONE_COLUMNS["date"]],
@@ -57,6 +68,7 @@ class WordReader:
 
 
 def read_word(file):
+    # Let WordReader raise meaningful errors which app.py can display
     reader = WordReader(file)
     return {
         "fields": reader.read_fields(),

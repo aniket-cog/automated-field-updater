@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime
 import zipfile
 from io import BytesIO
+import traceback
 
 from excel_reader import read_excel
 from word_reader import read_word 
@@ -95,15 +96,23 @@ def process_initial_templates():
         try:
             word_file = st.session_state.uploaded_word_file
             excel_file = st.session_state.uploaded_excel_file
-            
+
+            # Quick client-side validation of filename extension
+            if not hasattr(word_file, "name") or not word_file.name.lower().endswith(".docx"):
+                st.error("Please upload a valid .docx Word file (file extension .docx).")
+                return
+
             st.session_state.raw_word_bytes = word_file.getvalue()
             st.session_state.raw_excel_bytes = excel_file.getvalue()
-            
+
+            # Call read_word with the raw bytes (WordReader handles bytes or file-like objects)
             st.session_state.word_template = read_word(st.session_state.raw_word_bytes)
             st.session_state.excel_template = read_excel(st.session_state.raw_excel_bytes)
             st.session_state.step = "edit"
         except Exception as e:
+            # Show full traceback in Streamlit to debug deployment issues
             st.error(f"Error parsing templates: {e}")
+            st.exception(traceback.format_exc())
 
 st.markdown('<div class="app-title">Automated Field Updater Tool</div>', unsafe_allow_html=True)
 st.markdown('<div class="app-subtitle">Cross-document data synchronization and management portal</div>', unsafe_allow_html=True)

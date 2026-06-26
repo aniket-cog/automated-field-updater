@@ -23,19 +23,19 @@ class WordUpdater:
         self.table = self.doc.tables[MAIN_TABLE_INDEX]
 
     def update_fields(self, field_values):
-    for field_name, value in field_values.items():
-        if field_name not in WORD_FIELDS:
-            continue
-        
-        row, _ = WORD_FIELDS[field_name]
-        if field_name == "Total Cost":
-            clean_value = str(value).replace("€", "").strip()
-            display_value = f"€ {clean_value}"
-        else:
-            display_value = str(value)
+        for field_name, value in field_values.items():
+            if field_name not in WORD_FIELDS:
+                continue
             
-        for col in DUPLICATE_COLUMNS:
-            self.table.rows[row].cells[col].text = display_value
+            row, _ = WORD_FIELDS[field_name]
+            if field_name == "Total Cost":
+                clean_value = str(value).replace("€", "").strip()
+                display_value = f"€ {clean_value}"
+            else:
+                display_value = str(value)
+                
+            for col in DUPLICATE_COLUMNS:
+                self.table.rows[row].cells[col].text = display_value
 
     def get_milestone_table(self):
         parent_cell = self.table.rows[MILESTONE_PARENT_ROW].cells[MILESTONE_PARENT_COLUMN]

@@ -1,8 +1,12 @@
 # .streamlit/config.toml
+
 [server]
 enableXsrfProtection = false
 enableCORS = false
-enableWebsocketCompression = false
+# Forces the cloud system to send files uncompressed, preventing proxy blocks
+enableWebsocketCompression = false 
+maxUploadSize = 50
 
 [browser]
+# Stops tracking scripts from interfering with multipart headers
 gatherUsageStats = false

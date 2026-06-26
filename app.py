@@ -15,8 +15,6 @@ st.set_page_config(
     layout="centered"
 )
 
-st.write("Is XSRF Protection Disabled?:", st.get_option("server.enableXsrfProtection") == False)
-
 # --- GLOBAL ENTERPRISE STYLING ---
 st.markdown("""
     <style>

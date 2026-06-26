@@ -160,16 +160,6 @@ To adapt this tool to your document structure, update these mappings to match yo
 
 This project is licensed under the terms specified in the [LICENSE](LICENSE) file.
 
-## 🤝 Contributing
-
-Contributions are welcome! To contribute:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
 ## 📝 Notes
 
 - Ensure your template documents follow the expected structure defined in `config.py`
@@ -190,11 +180,3 @@ Contributions are welcome! To contribute:
 **Issue**: Application crashes during processing
 - Check the browser console and terminal for detailed error messages
 - Verify all files have appropriate read/write permissions
-
-## 📧 Support
-
-For issues, questions, or suggestions, please open an issue on the [GitHub repository](https://github.com/aniket-cog/automated-field-updater/issues).
-
----
-
-**Built with ❤️ by Aniket Saha**

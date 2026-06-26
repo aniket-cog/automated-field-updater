@@ -22,7 +22,7 @@ class ExcelReader:
             
         # Load cleanly via a BytesIO wrapper stream
         self.workbook = load_workbook(BytesIO(file_bytes))
-        self.sheet = self.workbook.active
+        self.sheet = self.workbook.worksheets[0]
 
     def read_common_fields(self) -> dict[str, Any]:
         data = {}

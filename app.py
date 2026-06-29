@@ -4,11 +4,13 @@ from datetime import datetime
 import zipfile
 from io import BytesIO
 import traceback
+import openpyxl  # Added to extract unique Team names directly on file upload
 
 from excel_reader import read_excel
 from word_reader import read_word 
 from word_updater import update_word
 from excel_updater import update_excel
+from config import TEAM_NAME_COLUMN, SPRINT_CYCLE_COLUMN, ALLOCATION_COLUMN, EXCEPTIONAL_RATE_COLUMN, RESOURCE_START_ROW
 
 st.set_page_config(
     page_title="Automated Field Updater Tool", 
@@ -78,6 +80,8 @@ if "raw_word_bytes" not in st.session_state:
     st.session_state.raw_word_bytes = None
 if "raw_excel_bytes" not in st.session_state:
     st.session_state.raw_excel_bytes = None
+if "resource_tracker" not in st.session_state:
+    st.session_state.resource_tracker = {}
 
 def reset_application():
     st.session_state.step = "upload"
@@ -86,6 +90,7 @@ def reset_application():
     st.session_state.zip_buffer = None
     st.session_state.raw_word_bytes = None
     st.session_state.raw_excel_bytes = None
+    st.session_state.resource_tracker = {}
 
 def process_initial_templates():
     if not st.session_state.get("uploaded_word_file") or not st.session_state.get("uploaded_excel_file"):
@@ -106,6 +111,41 @@ def process_initial_templates():
 
             st.session_state.word_template = read_word(st.session_state.raw_word_bytes)
             st.session_state.excel_template = read_excel(st.session_state.raw_excel_bytes)
+            
+            # Extract unique Team names and values to seed our live state tracker
+            wb = openpyxl.load_workbook(BytesIO(st.session_state.raw_excel_bytes), data_only=True)
+            ws = wb.worksheets[0]
+            row = RESOURCE_START_ROW
+            tracker = {}
+            while True:
+                team_val = ws[f"{TEAM_NAME_COLUMN}{row}"].value
+                if team_val is None or str(team_val).strip() == "":
+                    break
+                t_name = str(team_val).strip()
+                
+                # Fetch baseline values straight from the spreadsheet row
+                s_val = ws[f"{SPRINT_CYCLE_COLUMN}{row}"].value
+                a_val = ws[f"{ALLOCATION_COLUMN}{row}"].value
+                r_val = ws[f"{EXCEPTIONAL_RATE_COLUMN}{row}"].value
+                
+                # Safeguard float parsing
+                try: sprint_init = float(s_val) if s_val is not None else 8.0
+                except: sprint_init = 8.0
+                try: 
+                    alloc_init = float(a_val) if a_val is not None else 1.0
+                    if alloc_init <= 1.0: alloc_init = alloc_init * 100.0
+                except: alloc_init = 100.0
+                try: rate_init = float(r_val) if r_val is not None else 125.0
+                except: rate_init = 125.0
+
+                tracker[t_name] = {
+                    "sprint_cycle": sprint_init,
+                    "allocation": alloc_init,
+                    "exceptional_rate": rate_init
+                }
+                row += 1
+                
+            st.session_state.resource_tracker = tracker
             st.session_state.step = "edit"
         except Exception as e:
             st.error(f"Error parsing templates: {e}")
@@ -165,14 +205,9 @@ elif st.session_state.step == "edit":
     
     try:
         raw_cost = excel_template.get("Total Cost") or word_fields_data.get("Total Cost") or 0
-        default_cost = int(float(str(raw_cost).replace("€", "").replace(",", "").strip()))
+        default_cost = float(str(raw_cost).replace("€", "").replace(",", "").strip())
     except ValueError:
-        default_cost = 0
-
-    default_sprint = int(excel_template.get("Sprint Cycle", 8)) if str(excel_template.get("Sprint Cycle", "")).isdigit() else 8
-    default_alloc = float(excel_template.get("Allocation", 100.0)) if isinstance(excel_template.get("Allocation"), (int, float)) else 100.0
-    if default_alloc <= 1.0: default_alloc = default_alloc * 100  
-    default_rate = int(float(excel_template.get("Exceptional Rate", 125))) if isinstance(excel_template.get("Exceptional Rate"), (int, float)) else 125
+        default_cost = 0.0
 
     with st.container(border=True):
         st.markdown('<div class="section-header">Global Core Parameters</div>', unsafe_allow_html=True)
@@ -183,7 +218,7 @@ elif st.session_state.step == "edit":
         with c2:
             project_end = st.date_input("Project End Date", value=default_end)
         with c3:
-            project_cost_input = st.number_input("Total Cost (€)", value=default_cost, step=1)
+            project_cost_input = st.number_input("Total Cost (€)", value=default_cost, step=100.0, format="%.2f")
 
         c4, c5 = st.columns(2)
         with c4:
@@ -199,15 +234,53 @@ elif st.session_state.step == "edit":
 
     st.write("") 
 
+    # --- UPDATED INDIVIDUAL TEAM MANAGEMENT LAYOUT ---
     with st.container(border=True):
-        st.markdown('<div class="section-header">Excel-Only Operational Settings</div>', unsafe_allow_html=True)
-        c8, c9, c10 = st.columns(3)
-        with c8:
-            sprint_cycle = st.number_input("No of Sprint Cycle", value=default_sprint, step=1)
-        with c9:
-            allocation = st.number_input("% of Allocation", value=default_alloc, step=5.0)
-        with c10:
-            exceptional_rate = st.number_input("Exceptional Rate (€)", value=default_rate, step=1)
+        st.markdown('<div class="section-header">Excel Operational Settings by Team Resource</div>', unsafe_allow_html=True)
+        
+        teams_available = list(st.session_state.resource_tracker.keys())
+        
+        if not teams_available:
+            st.warning("⚠️ No records found in the configured Resource Table section range.")
+        else:
+            selected_team = st.selectbox("Select Team Name", options=teams_available)
+            
+            # Load stored metrics for this explicit team choice
+            current_team_data = st.session_state.resource_tracker[selected_team]
+            
+            c8, c9, c10 = st.columns(3)
+            with c8:
+                sprint_cycle_input = st.number_input(
+                    f"No of Sprint Cycle", 
+                    value=float(current_team_data["sprint_cycle"]), 
+                    step=0.5, 
+                    format="%.2f",
+                    key=f"sprint_{selected_team}"
+                )
+            with c9:
+                # Both value and step explicitly defined as integers to resolve type mixing error
+                allocation_input = st.number_input(
+                    f"% of Allocation", 
+                    value=int(current_team_data["allocation"]), 
+                    step=5, 
+                    format="%d",
+                    key=f"alloc_{selected_team}"
+                )
+            with c10:
+                exceptional_rate_input = st.number_input(
+                    f"Exceptional Rate (€)", 
+                    value=float(current_team_data["exceptional_rate"]), 
+                    step=5.0, 
+                    format="%.2f",
+                    key=f"rate_{selected_team}"
+                )
+                
+            # Keep changes synced immediately to memory state maps
+            st.session_state.resource_tracker[selected_team] = {
+                "sprint_cycle": sprint_cycle_input,
+                "allocation": allocation_input,
+                "exceptional_rate": exceptional_rate_input
+            }
 
     st.write("") 
 
@@ -218,15 +291,14 @@ elif st.session_state.step == "edit":
         if initial_milestones is None or initial_milestones.empty:
             initial_milestones = pd.DataFrame(columns=["name", "date", "monthly", "quality", "invoice"])
         else:
-            # Safe text stripping configuration to prevent data drops
             for col in ["monthly", "quality", "invoice"]:
                 if col in initial_milestones.columns:
-                    # Strip out currencies safely using generic string mapping rules
                     cleaned_series = initial_milestones[col].astype(str).str.replace("€", "", regex=False)
                     cleaned_series = cleaned_series.str.replace(",", "", regex=False).str.strip()
-                    initial_milestones[col] = pd.to_numeric(cleaned_series, errors="coerce").fillna(0)
+                    # Enforce high-precision float parsing directly on data ingestion map layers
+                    initial_milestones[col] = pd.to_numeric(cleaned_series, errors="coerce").astype(float).fillna(0.0)
 
-        # Re-render using strict structural rules
+        # Configured step parameters directly to open floating point inputs dynamically
         edited_milestones_df = st.data_editor(
             initial_milestones,
             num_rows="dynamic",
@@ -234,9 +306,9 @@ elif st.session_state.step == "edit":
             column_config={
                 "name": st.column_config.TextColumn("Milestone Name", required=True),
                 "date": st.column_config.TextColumn("Payment Date", required=True),
-                "monthly": st.column_config.NumberColumn("Monthly 85% (€)", format="€ %d", min_value=0),
-                "quality": st.column_config.NumberColumn("Quality 15% (€)", format="€ %d", min_value=0),
-                "invoice": st.column_config.NumberColumn("Invoice Amount (€)", format="€ %d", min_value=0),
+                "monthly": st.column_config.NumberColumn("Monthly 85% (€)", format="€ %.2f", min_value=0.0, step=0.01),
+                "quality": st.column_config.NumberColumn("Quality 15% (€)", format="€ %.2f", min_value=0.0, step=0.01),
+                "invoice": st.column_config.NumberColumn("Invoice Amount (€)", format="€ %.2f", min_value=0.0, step=0.01),
             }
         )
     
@@ -248,14 +320,12 @@ elif st.session_state.step == "edit":
                 word_fields = {
                     "Project Start Date": project_start.strftime("%d-%b-%Y"),
                     "Project End Date": project_end.strftime("%d-%b-%Y"),
-                    "Total Cost": str(project_cost_input),  
+                    "Total Cost": f"{project_cost_input:.2f}",  
                     "RELEASE Start Date": rel_start.strftime("%d-%b-%Y"),
                     "RELEASE End Date": rel_end.strftime("%d-%b-%Y"),
                     "SOW Approved by": approved_by,
                     "SOW Approved on": approved_on.strftime("%d-%b-%Y")
                 }
-
-                final_alloc_val = allocation / 100.0
 
                 excel_fields = {
                     "Project Start Date": project_start,  
@@ -263,8 +333,19 @@ elif st.session_state.step == "edit":
                     "Total Cost": project_cost_input
                 }
 
+                # Construct a normalized dict mapped for the excel backend parser (allocations divided back to base decimals)
+                final_excel_tracker_payload = {}
+                for t, datasets in st.session_state.resource_tracker.items():
+                    final_excel_tracker_payload[t] = {
+                        "sprint_cycle": datasets["sprint_cycle"],
+                        "allocation": datasets["allocation"] / 100.0,
+                        "exceptional_rate": datasets["exceptional_rate"]
+                    }
+
                 updated_word = update_word(BytesIO(st.session_state.raw_word_bytes), word_fields, edited_milestones_df)
-                updated_excel = update_excel(BytesIO(st.session_state.raw_excel_bytes), excel_fields, sprint_cycle, final_alloc_val, exceptional_rate)
+                
+                # Sending full tracking dictionary map array payload
+                updated_excel = update_excel(BytesIO(st.session_state.raw_excel_bytes), excel_fields, final_excel_tracker_payload)
 
                 zip_io = BytesIO()
                 with zipfile.ZipFile(zip_io, "w", zipfile.ZIP_DEFLATED) as zip_file:
@@ -278,6 +359,7 @@ elif st.session_state.step == "edit":
 
             except Exception as e:
                 st.error(f"Synchronization runtime error: {e}")
+                st.exception(traceback.format_exc())
 
 # --- STEP 3: DOWNLOAD & COMPLETE RESET STATE ---
 elif st.session_state.step == "download_ready":

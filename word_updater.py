@@ -65,11 +65,18 @@ class WordUpdater:
                 return ""
             return str(val).strip()
 
+        # Currency formatting utility for floats
         def clean_currency_val(val):
             if pd.isna(val) or val is None or str(val).strip() == "":
                 return ""
-            raw_num = str(val).replace("€", "").strip()
-            return f"€ {raw_num}"
+            # Strip out any existing symbols or extra spaces
+            raw_num = str(val).replace("€", "").replace(",", "").strip()
+            try:
+                # Convert to float and format to exactly 2 decimal places
+                formatted_num = f"{float(raw_num):,.2f}"
+                return f"€ {formatted_num}"
+            except ValueError:
+                return f"€ {raw_num}"
 
         for _, milestone in milestone_df.iterrows():
             new_row = deepcopy(template_row)

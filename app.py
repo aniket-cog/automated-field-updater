@@ -97,7 +97,6 @@ def process_initial_templates():
             word_file = st.session_state.uploaded_word_file
             excel_file = st.session_state.uploaded_excel_file
 
-            # Quick client-side validation of filename extension
             if not hasattr(word_file, "name") or not word_file.name.lower().endswith(".docx"):
                 st.error("Please upload a valid .docx Word file (file extension .docx).")
                 return
@@ -105,12 +104,10 @@ def process_initial_templates():
             st.session_state.raw_word_bytes = word_file.getvalue()
             st.session_state.raw_excel_bytes = excel_file.getvalue()
 
-            # Call read_word with the raw bytes (WordReader handles bytes or file-like objects)
             st.session_state.word_template = read_word(st.session_state.raw_word_bytes)
             st.session_state.excel_template = read_excel(st.session_state.raw_excel_bytes)
             st.session_state.step = "edit"
         except Exception as e:
-            # Show full traceback in Streamlit to debug deployment issues
             st.error(f"Error parsing templates: {e}")
             st.exception(traceback.format_exc())
 
@@ -174,7 +171,7 @@ elif st.session_state.step == "edit":
 
     default_sprint = int(excel_template.get("Sprint Cycle", 8)) if str(excel_template.get("Sprint Cycle", "")).isdigit() else 8
     default_alloc = float(excel_template.get("Allocation", 100.0)) if isinstance(excel_template.get("Allocation"), (int, float)) else 100.0
-    if default_alloc <= 1.0: default_alloc = default_alloc * 100  # Formats raw fraction floats out to cleanly readable 100% bounds
+    if default_alloc <= 1.0: default_alloc = default_alloc * 100  
     default_rate = int(float(excel_template.get("Exceptional Rate", 125))) if isinstance(excel_template.get("Exceptional Rate"), (int, float)) else 125
 
     with st.container(border=True):
@@ -186,7 +183,7 @@ elif st.session_state.step == "edit":
         with c2:
             project_end = st.date_input("Project End Date", value=default_end)
         with c3:
-            total_cost = st.number_input("Total Cost (€)", value=default_cost, step=1)
+            project_cost_input = st.number_input("Total Cost (€)", value=default_cost, step=1)
 
         c4, c5 = st.columns(2)
         with c4:
@@ -217,9 +214,19 @@ elif st.session_state.step == "edit":
     with st.container(border=True):
         st.markdown('<div class="section-header">Payment Milestones Table Lifecycle</div>', unsafe_allow_html=True)
         initial_milestones = st.session_state.word_template.get("milestones")
+        
         if initial_milestones is None or initial_milestones.empty:
             initial_milestones = pd.DataFrame(columns=["name", "date", "monthly", "quality", "invoice"])
+        else:
+            # Safe text stripping configuration to prevent data drops
+            for col in ["monthly", "quality", "invoice"]:
+                if col in initial_milestones.columns:
+                    # Strip out currencies safely using generic string mapping rules
+                    cleaned_series = initial_milestones[col].astype(str).str.replace("€", "", regex=False)
+                    cleaned_series = cleaned_series.str.replace(",", "", regex=False).str.strip()
+                    initial_milestones[col] = pd.to_numeric(cleaned_series, errors="coerce").fillna(0)
 
+        # Re-render using strict structural rules
         edited_milestones_df = st.data_editor(
             initial_milestones,
             num_rows="dynamic",
@@ -227,9 +234,9 @@ elif st.session_state.step == "edit":
             column_config={
                 "name": st.column_config.TextColumn("Milestone Name", required=True),
                 "date": st.column_config.TextColumn("Payment Date", required=True),
-                "monthly": st.column_config.TextColumn("Monthly 85% (€)"),
-                "quality": st.column_config.TextColumn("Quality 15% (€)"),
-                "invoice": st.column_config.TextColumn("Invoice Amount (€)"),
+                "monthly": st.column_config.NumberColumn("Monthly 85% (€)", format="€ %d", min_value=0),
+                "quality": st.column_config.NumberColumn("Quality 15% (€)", format="€ %d", min_value=0),
+                "invoice": st.column_config.NumberColumn("Invoice Amount (€)", format="€ %d", min_value=0),
             }
         )
     
@@ -241,20 +248,19 @@ elif st.session_state.step == "edit":
                 word_fields = {
                     "Project Start Date": project_start.strftime("%d-%b-%Y"),
                     "Project End Date": project_end.strftime("%d-%b-%Y"),
-                    "Total Cost": str(total_cost),
+                    "Total Cost": str(project_cost_input),  
                     "RELEASE Start Date": rel_start.strftime("%d-%b-%Y"),
                     "RELEASE End Date": rel_end.strftime("%d-%b-%Y"),
                     "SOW Approved by": approved_by,
                     "SOW Approved on": approved_on.strftime("%d-%b-%Y")
                 }
 
-                # Convert allocation value back to decimal fraction format if backend expects raw percentages
                 final_alloc_val = allocation / 100.0
 
                 excel_fields = {
                     "Project Start Date": project_start,  
                     "Project End Date": project_end,      
-                    "Total Cost": total_cost
+                    "Total Cost": project_cost_input
                 }
 
                 updated_word = update_word(BytesIO(st.session_state.raw_word_bytes), word_fields, edited_milestones_df)

@@ -59,20 +59,30 @@ class WordUpdater:
             tr = table.rows[-1]._tr 
             tr.getparent().remove(tr)
 
+        # Standard value cleaning
         def clean_val(val):
             if pd.isna(val) or val is None:
                 return ""
-            return str(val)
+            return str(val).strip()
+
+        def clean_currency_val(val):
+            if pd.isna(val) or val is None or str(val).strip() == "":
+                return ""
+            raw_num = str(val).replace("€", "").strip()
+            return f"€ {raw_num}"
 
         for _, milestone in milestone_df.iterrows():
             new_row = deepcopy(template_row)
             table._tbl.append(new_row)
             row = table.rows[-1]
+            
             row.cells[MILESTONE_COLUMNS["name"]].text = clean_val(milestone["name"])
             row.cells[MILESTONE_COLUMNS["date"]].text = clean_val(milestone["date"])
-            row.cells[MILESTONE_COLUMNS["monthly"]].text = clean_val(milestone["monthly"])
-            row.cells[MILESTONE_COLUMNS["quality"]].text = clean_val(milestone["quality"])
-            row.cells[MILESTONE_COLUMNS["invoice"]].text = clean_val(milestone["invoice"])
+            
+            # Explicit Financial Currency fields
+            row.cells[MILESTONE_COLUMNS["monthly"]].text = clean_currency_val(milestone["monthly"])
+            row.cells[MILESTONE_COLUMNS["quality"]].text = clean_currency_val(milestone["quality"])
+            row.cells[MILESTONE_COLUMNS["invoice"]].text = clean_currency_val(milestone["invoice"])
 
     def update(self, field_values, milestone_df):
         self.update_fields(field_values)

@@ -82,6 +82,11 @@ if "raw_excel_bytes" not in st.session_state:
     st.session_state.raw_excel_bytes = None
 if "resource_tracker" not in st.session_state:
     st.session_state.resource_tracker = {}
+# Added safe placeholders for the file names
+if "word_filename" not in st.session_state:
+    st.session_state.word_filename = "Document.docx"
+if "excel_filename" not in st.session_state:
+    st.session_state.excel_filename = "Spreadsheet.xlsx"
 
 def reset_application():
     st.session_state.step = "upload"
@@ -91,6 +96,8 @@ def reset_application():
     st.session_state.raw_word_bytes = None
     st.session_state.raw_excel_bytes = None
     st.session_state.resource_tracker = {}
+    st.session_state.word_filename = "Document.docx"
+    st.session_state.excel_filename = "Spreadsheet.xlsx"
 
 def process_initial_templates():
     if not st.session_state.get("uploaded_word_file") or not st.session_state.get("uploaded_excel_file"):
@@ -108,13 +115,24 @@ def process_initial_templates():
 
             st.session_state.raw_word_bytes = word_file.getvalue()
             st.session_state.raw_excel_bytes = excel_file.getvalue()
+            
+            # CRITICAL FIX: Save the names immediately while the widgets are actively populated
+            st.session_state.word_filename = word_file.name
+            st.session_state.excel_filename = excel_file.name
 
             st.session_state.word_template = read_word(st.session_state.raw_word_bytes)
             st.session_state.excel_template = read_excel(st.session_state.raw_excel_bytes)
             
             # Extract unique Team names and values to seed our live state tracker
             wb = openpyxl.load_workbook(BytesIO(st.session_state.raw_excel_bytes), data_only=True)
-            ws = wb.worksheets[0]
+            
+            # Explicitly target the sheet named "Team Loading Sheet"
+            target_sheet = "Team Loading Sheet"
+            if target_sheet in wb.sheetnames:
+                ws = wb[target_sheet]
+            else:
+                ws = wb.worksheets[0]
+                
             row = RESOURCE_START_ROW
             tracker = {}
             while True:
@@ -258,7 +276,6 @@ elif st.session_state.step == "edit":
                     key=f"sprint_{selected_team}"
                 )
             with c9:
-                # Both value and step explicitly defined as integers to resolve type mixing error
                 allocation_input = st.number_input(
                     f"% of Allocation", 
                     value=int(current_team_data["allocation"]), 
@@ -295,10 +312,8 @@ elif st.session_state.step == "edit":
                 if col in initial_milestones.columns:
                     cleaned_series = initial_milestones[col].astype(str).str.replace("€", "", regex=False)
                     cleaned_series = cleaned_series.str.replace(",", "", regex=False).str.strip()
-                    # Enforce high-precision float parsing directly on data ingestion map layers
                     initial_milestones[col] = pd.to_numeric(cleaned_series, errors="coerce").astype(float).fillna(0.0)
 
-        # Configured step parameters directly to open floating point inputs dynamically
         edited_milestones_df = st.data_editor(
             initial_milestones,
             num_rows="dynamic",
@@ -343,14 +358,16 @@ elif st.session_state.step == "edit":
                     }
 
                 updated_word = update_word(BytesIO(st.session_state.raw_word_bytes), word_fields, edited_milestones_df)
-                
-                # Sending full tracking dictionary map array payload
                 updated_excel = update_excel(BytesIO(st.session_state.raw_excel_bytes), excel_fields, final_excel_tracker_payload)
+
+                # FIX: Pulling file names safely from the stable string attributes initialized during step 1
+                orig_word_name = st.session_state.word_filename
+                orig_excel_name = st.session_state.excel_filename
 
                 zip_io = BytesIO()
                 with zipfile.ZipFile(zip_io, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                    zip_file.writestr("_Updated_SOW.docx", updated_word.getvalue())
-                    zip_file.writestr("_Updated_TLS.xlsx", updated_excel.getvalue())
+                    zip_file.writestr(f"Updated_{orig_word_name}", updated_word.getvalue())
+                    zip_file.writestr(f"Updated_{orig_excel_name}", updated_excel.getvalue())
                 
                 zip_io.seek(0)
                 st.session_state.zip_buffer = zip_io.getvalue()

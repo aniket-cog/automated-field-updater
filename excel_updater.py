@@ -17,7 +17,13 @@ class ExcelUpdater:
         if isinstance(file_bytes, memoryview):
             file_bytes = file_bytes.tobytes()
         self.workbook = load_workbook(BytesIO(file_bytes))
-        self.sheet = self.workbook.worksheets[0]
+        
+        # Target the specific sheet by name, fall back to first sheet if missing
+        target_sheet = "Team Loading Sheet"
+        if target_sheet in self.workbook.sheetnames:
+            self.sheet = self.workbook[target_sheet]
+        else:
+            self.sheet = self.workbook.worksheets[0]
 
     def update_common_fields(self, common_fields):
         for field, cell in EXCEL_COMMON_FIELDS.items():
@@ -44,13 +50,15 @@ class ExcelUpdater:
             if team_name in resource_data_dict:
                 data = resource_data_dict[team_name]
                 
+                # Update Sprint Cycle safely as float
                 self.sheet[f"{SPRINT_CYCLE_COLUMN}{row}"] = float(data["sprint_cycle"])
                 
-                # Update Allocation as a clean integer percentage
+                # Update Allocation as integer percentage without losing gridlines
                 alloc_cell = self.sheet[f"{ALLOCATION_COLUMN}{row}"]
-                alloc_cell.value = float(data["allocation"])  
-                alloc_cell.number_format = '0%' 
-
+                alloc_cell.value = float(data["allocation"])
+                alloc_cell.number_format = '0%'
+                
+                # Update Exceptional Rate safely as float
                 self.sheet[f"{EXCEPTIONAL_RATE_COLUMN}{row}"] = float(data["exceptional_rate"])
                 
             row += 1
